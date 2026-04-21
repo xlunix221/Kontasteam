@@ -5,6 +5,8 @@ import imaplib
 import email
 import re
 import time
+import json
+import os
 from datetime import datetime
 
 # --- KONFIGURACJA ---
@@ -18,34 +20,27 @@ IMAP_SERVER = "imap.poczta.onet.pl"
 # --- LOGIKA BACKENDU ---
 
 def connect_gsheet():
-    # Pobieramy sekrety jako słownik
-    s = st.secrets["gcp_service_account"]
+    # 1. Pobieramy dane z Secrets
+    creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # Ręcznie budujemy czysty słownik, żeby uniknąć błędów z formatem Streamlita
-    creds_info = {
-        "type": s["type"],
-        "project_id": s["project_id"],
-        "private_key_id": s["private_key_id"],
-        "private_key": s["private_key"],
-        "client_email": s["client_email"],
-        "client_id": s["client_id"],
-        "auth_uri": s["auth_uri"],
-        "token_uri": s["token_uri"],
-        "auth_provider_x509_cert_url": s["auth_provider_x509_cert_url"],
-        "client_x509_cert_url": s["client_x509_cert_url"]
-    }
+    # 2. Naprawiamy klucz (usuwamy podwójne backslashe)
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
-    # Czyścimy klucz prywatny z wszelkich śmieci (spacje, złe znaki nowej linii)
-    key = creds_info["private_key"]
-    # Zamień tekstowe \n na prawdziwe entery
-    key = key.replace("\\n", "\n")
-    # Usuń ewentualne cudzysłowy, które mogły się wkleić na początku/końcu
-    key = key.strip().strip('"').strip("'")
-    creds_info["private_key"] = key
+    # 3. SZTUCZKA: Tworzymy tymczasowy plik, żeby oszukać bibliotekę
+    with open("temp_creds.json", "w") as f:
+        json.dump(creds_dict, f)
     
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, SCOPE)
-    client = gspread.authorize(creds)
-    return client.open(SHEET_NAME).sheet1
+    try:
+        # Używamy tej samej metody co na komputerze, ale na tymczasowym pliku
+        creds = ServiceAccountCredentials.from_json_keyfile_name("temp_creds.json", SCOPE)
+        client = gspread.authorize(creds)
+        sheet = client.open(SHEET_NAME).sheet1
+        return sheet
+    finally:
+        # Usuwamy plik, żeby nie zostawiać śladów
+        if os.path.exists("temp_creds.json"):
+            os.remove("temp_creds.json")
     
 def get_steam_code():
     try:
