@@ -101,6 +101,37 @@ if st.session_state.logged_in_as == "admin":
                 nl = st.text_input("Login")
                 nh = st.text_input("Hasło")
                 nk = st.text_input("Kod znajomego")
+                
+                if st.button("Zapisz w bazie ✅"):
+                    if nl and nh:
+                        with st.spinner("Szukanie miejsca w tabeli..."):
+                            # Pobieramy całą kolumnę A, żeby zobaczyć gdzie są luki
+                            col_a = sheet.col_values(1)
+                            
+                            # Szukamy pierwszego pustego wiersza (od drugiego wiersza w górę)
+                            target_row = len(col_a) + 1
+                            for i, value in enumerate(col_a):
+                                if i == 0: continue # Omijamy nagłówek
+                                if value.strip() == "": # Znaleźliśmy dziurę w tabeli!
+                                    target_row = i + 1
+                                    break
+                            
+                            # Przygotowujemy dane
+                            new_data = [nl, nh, "", "", "", "", "nie odblokowany", nk]
+                            
+                            # Wpisujemy dane w konkretny wiersz zamiast append
+                            range_name = f"A{target_row}:H{target_row}"
+                            sheet.update(range_name, [new_data])
+                            
+                            st.success(f"Dodano konto w wierszu {target_row}!")
+                            time.sleep(1)
+                            st.rerun()
+                    else:
+                        st.error("Login i hasło są wymagane!")
+                st.divider()
+                nl = st.text_input("Login")
+                nh = st.text_input("Hasło")
+                nk = st.text_input("Kod znajomego")
                 if st.button("Zapisz w bazie ✅"):
                     if nl and nh:
                         sheet.append_row([nl, nh, "", "", "", "", "nie odblokowany", nk])
