@@ -16,7 +16,7 @@ EMAIL_USER = "jestesmygejami211569809@op.pl"
 EMAIL_PASS = "QHHZ-4BGJ-UEDR-UZOV"
 IMAP_SERVER = "imap.poczta.onet.pl"
 
-# --- LOGIKA BACKENDU (Z OPTYMALIZACJĄ) ---
+# --- LOGIKA BACKENDU ---
 
 @st.cache_resource
 def get_gspread_client():
@@ -122,7 +122,9 @@ def add_acc_dialog():
             sheet.update(range_name=f"A{target_row}:B{target_row}", values=[[nl, nh]])
             sheet.update(range_name=f"G{target_row}:H{target_row}", values=[["nie odblokowany", nk]])
             st.cache_data.clear()
-            st.session_state.show_add_wizard = False; st.rerun()
+            st.session_state.show_add_wizard = False
+            st.session_state.selected_acc = None
+            st.rerun()
 
 @st.dialog("Zarządzanie kontem")
 def manage_dialog(acc):
@@ -132,7 +134,7 @@ def manage_dialog(acc):
     for i, row in enumerate(raw_rows):
         if row and row[0] == acc['Nazwa konta']: r_idx = i + 1; break
 
-    # WIZARD LOGOWANIA (Pokazuje się tylko gdy klikniesz Zaloguj)
+    # WIZARD LOGOWANIA
     if st.session_state.wizard_step > 0:
         step = st.session_state.wizard_step
         if step == 1:
@@ -143,11 +145,17 @@ def manage_dialog(acc):
             if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 3; st.rerun()
         elif step == 3:
             if st.button("Pobierz kod 📩", use_container_width=True):
-                with st.spinner("Szukam..."): code, mid = get_steam_data("code"); st.session_state.temp_code = code; st.session_state.last_mid = mid
+                with st.spinner("Szukam..."): 
+                    code, mid = get_steam_data("code")
+                    st.session_state.temp_code = code
+                    st.session_state.last_mid = mid
             if "temp_code" in st.session_state: st.code(st.session_state.temp_code)
-            if st.button("Gotowe (Usuwa maila) ✅", use_container_width=True):
+            if st.button("Gotowe (Wróć do listy) ✅", use_container_width=True):
                 if "last_mid" in st.session_state: delete_steam_email(st.session_state.last_mid)
-                st.session_state.wizard_step = 0; st.session_state.pop("temp_code", None); st.rerun()
+                st.session_state.wizard_step = 0
+                st.session_state.selected_acc = None # Wraca do listy
+                st.session_state.pop("temp_code", None)
+                st.rerun()
         return
 
     # ZAKŁADKI: STATUS / ADMIN
@@ -168,7 +176,6 @@ def manage_dialog(acc):
         st.write("Status turniejowy:")
         curr_s = acc.get('odblokowanie status', 'nie odblokowany')
         cs1, cs2 = st.columns(2)
-        # Zamieniliśmy Selectbox na przyciski - ZERO PĘTLI!
         if cs1.button("Ustaw: ODBLOKOWANY", use_container_width=True, disabled=(curr_s == "odblokowany")):
             sheet.update_cell(r_idx, 7, "odblokowany"); st.cache_data.clear(); st.rerun()
         if cs2.button("Ustaw: NIE ODBLOKOWANY", use_container_width=True, disabled=(curr_s == "nie odblokowany")):
@@ -187,11 +194,8 @@ def manage_dialog(acc):
                 sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[["", ""]]); sheet.update_cell(r_idx, 8, ""); st.cache_data.clear(); st.session_state.selected_acc = None; st.rerun()
 
     st.divider()
-    c_bot1, c_bot2 = st.columns(2)
-    if c_bot1.button("🚀 ZALOGUJ SIĘ", use_container_width=True):
+    if st.button("🚀 ZALOGUJ SIĘ", use_container_width=True):
         st.session_state.wizard_step = 1; st.rerun()
-    if c_bot2.button("ZAMKNIJ I WRÓĆ ⬅️", use_container_width=True):
-        st.session_state.selected_acc = None; st.session_state.wizard_step = 0; st.rerun()
 
 # --- PANEL GŁÓWNY ---
 if st.session_state.logged_in_as == "admin":
