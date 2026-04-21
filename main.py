@@ -59,7 +59,6 @@ def get_steam_data(search_type="code"):
 # --- INTERFEJS ---
 st.set_page_config(page_title="CS Manager PRO", layout="wide")
 
-# Inicjalizacja stanów
 if "logged_in_as" not in st.session_state: st.session_state.logged_in_as = None
 if "wizard_step" not in st.session_state: st.session_state.wizard_step = 0
 if "selected_acc" not in st.session_state: st.session_state.selected_acc = None
@@ -83,7 +82,7 @@ raw_rows = sheet.get_all_values()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
 
-# --- DIALOGI ---
+# --- DEFINICJE OKIEN DIALOGOWYCH ---
 
 @st.dialog("Nowe konto")
 def add_acc_dialog():
@@ -155,8 +154,8 @@ def manage_dialog(acc):
     if st.session_state.logged_in_as == "admin" and len(tabs) > 1:
         with tabs[1]:
             st.subheader("Opcje Administratora")
-            # CZYSZCZENIE BANA - Tylko tutaj!
-            if st.button("WYCZYŚĆ BANA 🟢", use_container_width=True, type="secondary"):
+            # WYCZYŚĆ BANA - TYLKO TUTAJ
+            if st.button("WYCZYŚĆ BANA 🟢", use_container_width=True):
                 sheet.update_cell(r_idx, 3, ""); sheet.update_cell(r_idx, 4, ""); st.rerun()
             
             st.divider()
@@ -198,9 +197,23 @@ for idx, acc in enumerate(filtered):
     with cols[idx % 4]:
         with st.container(border=True):
             st.markdown(f"### {acc['Nazwa konta']}")
+            
+            # 1. STATUS BANA
             tl = acc.get('Pozostały czas / Status', 'Czyste')
-            if tl == "Czyste" or not tl: st.success("🟢 Gotowe")
-            else: st.error(f"⏳ {tl}")
+            if tl == "Czyste" or not tl: 
+                st.success("🟢 Brak bana")
+            else: 
+                st.error(f"⏳ {tl}")
+            
+            # 2. STATUS TURNIEJOWY
+            t_status = acc.get('odblokowanie status', 'nie odblokowany')
+            st.write(f"Turek: **{t_status}**")
+            
+            # 3. KOD ZNAJOMEGO (OSTRZEŻENIE)
+            f_code = acc.get('Kod znajomego', '').strip()
+            if not f_code or f_code.lower() == "brak" or f_code == "":
+                st.warning("⚠️ Brak kodu znajomego")
+
             if st.button("Zarządzaj", key=f"btn_{idx}", use_container_width=True):
                 st.session_state.selected_acc = acc
                 st.session_state.wizard_step = 0; st.rerun()
