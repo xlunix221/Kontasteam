@@ -66,8 +66,8 @@ if "logged_in_as" not in st.session_state:
 if st.session_state.logged_in_as is None:
     c1, c2, c3 = st.columns([1,2,1])
     with c2:
-        st.title("🛡️ Panel Zarządzania")
-        pass_input = st.text_input("Hasło dostępu", type="password")
+        st.title("🛡️ System Zarządzania")
+        pass_input = st.text_input("Wprowadź hasło", type="password")
         if pass_input:
             if pass_input == st.secrets["admin_password"]:
                 st.session_state.logged_in_as = "admin"; st.rerun()
@@ -81,120 +81,138 @@ raw_rows = sheet.get_all_values()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
 
-# --- PANEL ADMINA ---
+# --- PANEL ADMINA (GÓRNY) ---
 if st.session_state.logged_in_as == "admin":
-    with st.expander("⚙️ PANEL ADMINISTRATORA"):
+    with st.expander("🛠️ NARZĘDZIA ADMINISTRATORA"):
         adm_c1, adm_c2 = st.columns([1, 2])
         with adm_c1:
-            st.subheader("➕ Dodaj nowe konto")
-            if st.button("Uruchom Kreator Dodawania"):
+            st.subheader("➕ Dodaj konto")
+            if st.button("Uruchom Kreator"):
                 st.session_state.show_add_wizard = True
 
-            @st.dialog("Kreator dodawania")
+            @st.dialog("Nowe konto")
             def add_acc_wizard():
-                st.write("E-mail do weryfikacji:"); st.code(EMAIL_USER)
+                st.info(f"Email: {EMAIL_USER}")
                 if st.button("Pobierz link weryfikacyjny 🔗"):
                     link = get_steam_data("link")
-                    if link: st.link_button("KLIKNIJ, ABY ZWERYFIKOWAĆ", link)
-                    else: st.error("Nie znaleziono linku.")
-                
+                    if link: st.link_button("ZWERYFIKUJ KONTO", link)
+                    else: st.error("Brak linku.")
                 st.divider()
-                nl = st.text_input("Login")
-                nh = st.text_input("Hasło")
-                nk = st.text_input("Kod znajomego")
-                
-                if st.button("Zapisz w bazie ✅"):
+                nl, nh, nk = st.text_input("Login"), st.text_input("Hasło"), st.text_input("Kod znajomego")
+                if st.button("Zapisz ✅"):
                     if nl and nh:
                         col_a = sheet.col_values(1)
                         target_row = len(col_a) + 1
                         for i, val in enumerate(col_a):
                             if i == 0: continue
                             if not val or val.strip() == "": target_row = i + 1; break
-                        
-                        # Zapisujemy tylko A, B, G i H. C i D czyścimy. E i F nie ruszamy (formuły)!
                         sheet.update(range_name=f"A{target_row}:B{target_row}", values=[[nl, nh]])
-                        sheet.update(range_name=f"C{target_row}:D{target_row}", values=[["", ""]])
                         sheet.update(range_name=f"G{target_row}:H{target_row}", values=[["nie odblokowany", nk]])
-                        
-                        st.success(f"Dodano konto!"); time.sleep(1)
-                        if "show_add_wizard" in st.session_state: del st.session_state.show_add_wizard
-                        st.rerun()
+                        st.success("Dodano!"); time.sleep(1); st.rerun()
             if "show_add_wizard" in st.session_state: add_acc_wizard()
 
         with adm_c2:
-            st.subheader("📝 Edycja (Uwaga: Formuły zostaną zamienione na tekst!)")
+            st.subheader("📊 Podgląd bazy (Tylko odczyt)")
             df = pd.DataFrame(df_data, columns=headers)
-            edited_df = st.data_editor(df, num_rows="dynamic")
-            if st.button("💾 Zapisz wszystko (Nadpisuje formuły!)"):
-                cleaned_df = edited_df.fillna("").astype(str)
-                sheet.update(values=[headers] + cleaned_df.values.tolist(), range_name="A1")
-                st.success("Zapisano!"); st.rerun()
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
 st.divider()
 
-# --- WIDOK KONT ---
-st.title("🛡️ Lista Kont")
+# --- GŁÓWNY WIDOK ---
+st.title("🛡️ Twoje Konta")
 search = st.text_input("Szukaj...", "").lower()
 accounts = [dict(zip(headers, row)) for row in df_data if row and row[0] != ""]
 filtered = [a for a in accounts if search in a.get('Nazwa konta', '').lower()]
 
-if 'wizard_step' not in st.session_state: st.session_state.wizard_step = 0
+if "wizard_step" not in st.session_state: st.session_state.wizard_step = 0
 
 cols = st.columns(4)
 for idx, acc in enumerate(filtered):
     with cols[idx % 4]:
         with st.container(border=True):
-            st.markdown(f"### {acc.get('Nazwa konta', 'Bez nazwy')}")
+            st.markdown(f"### {acc['Nazwa konta']}")
             tl = acc.get('Pozostały czas / Status', 'Czyste')
             if tl == "Czyste" or not tl: st.success("🟢 Gotowe")
             else: st.error(f"⏳ {tl}")
             
-            if st.button("Otwórz Panel", key=f"pnl_{idx}", use_container_width=True):
+            if st.button("Zarządzaj", key=f"panel_{idx}", use_container_width=True):
                 st.session_state.selected_acc = acc
-                st.session_state.wizard_step = 1
+                st.session_state.wizard_step = 0 # 0 oznacza główne okno dialogu
                 st.rerun()
 
+# --- DIALOG ZARZĄDZANIA ---
 if "selected_acc" in st.session_state and st.session_state.selected_acc:
     acc = st.session_state.selected_acc
+    r_idx = 0
+    for i, row in enumerate(raw_rows):
+        if row and row[0] == acc['Nazwa konta']: r_idx = i + 1; break
+
     @st.dialog(f"Konto: {acc['Nazwa konta']}")
     def manage_dialog():
-        t1, t2 = st.tabs(["🔑 Logowanie", "📊 Status"])
-        with t1:
+        # Wizard logowania ma priorytet jeśli jest aktywny
+        if st.session_state.wizard_step > 0:
             step = st.session_state.wizard_step
             if step == 1:
-                st.write("Login:"); st.code(acc['Nazwa konta'])
-                if st.button("Dalej ➡️"): st.session_state.wizard_step = 2; st.rerun()
+                st.subheader("Krok 1: Login"); st.code(acc['Nazwa konta'])
+                if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 2; st.rerun()
             elif step == 2:
-                st.write("Hasło:"); st.code(acc['Hasło'])
-                if st.button("Dalej ➡️"): st.session_state.wizard_step = 3; st.rerun()
+                st.subheader("Krok 2: Hasło"); st.code(acc['Hasło'])
+                if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 3; st.rerun()
             elif step == 3:
-                if st.button("Pobierz kod 📩"):
+                st.subheader("Krok 3: Steam Guard")
+                if st.button("Pobierz kod 📩", use_container_width=True):
                     with st.spinner("Szukam..."): st.session_state.temp_code = get_steam_data("code")
-                if "temp_code" in st.session_state: st.code(st.session_state.temp_code)
-                if st.button("Zakończ ✅", use_container_width=True):
-                    st.session_state.selected_acc = None; st.session_state.wizard_step = 0
-                    if "temp_code" in st.session_state: del st.session_state.temp_code
-                    st.rerun()
-        with t2:
+                if "temp_code" in st.session_state: st.code(st.session_state.temp_code if st.session_state.temp_code else "Brak kodu.")
+                if st.button("Gotowe ✅", use_container_width=True):
+                    st.session_state.wizard_step = 0; del st.session_state.temp_code; st.rerun()
+            return
+
+        # Główne zakładki dialogu
+        tabs_list = ["📊 Status"]
+        if st.session_state.logged_in_as == "admin": tabs_list.append("⚙️ Admin")
+        
+        tabs = st.tabs(tabs_list)
+        
+        with tabs[0]:
             st.write(f"Kod znajomego: `{acc.get('Kod znajomego', 'Brak')}`")
-            r_idx = 0
-            for i, row in enumerate(raw_rows):
-                if row and row[0] == acc['Nazwa konta']: r_idx = i + 1; break
-            
             now_pl = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
             c1, c2, c3 = st.columns(3)
-            if c1.button("20h"):
-                sheet.update_cell(r_idx, 3, "20h"); sheet.update_cell(r_idx, 4, now_pl); st.rerun()
-            if c2.button("7 dni"):
-                sheet.update_cell(r_idx, 3, "7 dni"); sheet.update_cell(r_idx, 4, now_pl); st.rerun()
-            if c3.button("Perm"):
-                sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.rerun()
+            if c1.button("20h"): sheet.update_cell(r_idx, 3, "20h"); sheet.update_cell(r_idx, 4, now_pl); st.rerun()
+            if c2.button("7 dni"): sheet.update_cell(r_idx, 3, "7 dni"); sheet.update_cell(r_idx, 4, now_pl); st.rerun()
+            if c3.button("Perm"): sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.rerun()
             if st.button("Wyczyść bana 🟢", use_container_width=True):
                 sheet.update_cell(r_idx, 3, ""); sheet.update_cell(r_idx, 4, ""); st.rerun()
             
             st.divider()
+            # AUTOMATYCZNY ZAPIS STATUSU
             curr_st = acc.get('odblokowanie status', 'nie odblokowany')
-            new_st = st.selectbox("Status turniejowy", ["nie odblokowany", "odblokowany"], index=0 if curr_st == "nie odblokowany" else 1)
-            if st.button("Zapisz status"):
-                sheet.update_cell(r_idx, 7, new_st); st.success("Zapisano!"); time.sleep(1); st.rerun()
+            new_st = st.selectbox("Status turniejowy", ["nie odblokowany", "odblokowany"], 
+                                  index=0 if curr_st == "nie odblokowany" else 1, key=f"sb_{acc['Nazwa konta']}")
+            if new_st != curr_st:
+                with st.spinner("Aktualizacja..."):
+                    sheet.update_cell(r_idx, 7, new_st); st.rerun()
+
+        if st.session_state.logged_in_as == "admin":
+            with tabs[1]:
+                st.subheader("Edycja konta")
+                new_l = st.text_input("Nowy Login", acc['Nazwa konta'])
+                new_p = st.text_input("Nowe Hasło", acc['Hasło'])
+                new_k = st.text_input("Nowy Kod Znajomego", acc.get('Kod znajomego', ''))
+                
+                cc1, cc2 = st.columns(2)
+                if cc1.button("Zapisz zmiany 💾"):
+                    sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[[new_l, new_p]])
+                    sheet.update_cell(r_idx, 8, new_k)
+                    st.success("Zmieniono!"); time.sleep(1); st.rerun()
+                
+                if cc2.button("USUŃ KONTO 🗑️", type="primary"):
+                    # Czyścimy Nazwę, Hasło i Kod, zostawiamy resztę
+                    sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[["", ""]])
+                    sheet.update_cell(r_idx, 8, "")
+                    st.warning("Dane usunięte!"); time.sleep(1); st.session_state.selected_acc = None; st.rerun()
+
+        st.divider()
+        if st.button("🚀 ZALOGUJ SIĘ", use_container_width=True):
+            st.session_state.wizard_step = 1; st.rerun()
+            
     manage_dialog()
