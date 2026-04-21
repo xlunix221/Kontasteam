@@ -16,9 +16,9 @@ EMAIL_USER = "jestesmygejami211569809@op.pl"
 EMAIL_PASS = "QHHZ-4BGJ-UEDR-UZOV"
 IMAP_SERVER = "imap.poczta.onet.pl"
 
-# --- LOGIKA BACKENDU (Z CACHE) ---
+# --- LOGIKA BACKENDU ---
 
-@st.cache_resource # Zapamiętuje połączenie, nie łączy się co sekundę
+@st.cache_resource
 def get_gspread_client():
     creds_info = dict(st.secrets["gcp_service_account"])
     if "private_key" in creds_info:
@@ -28,7 +28,7 @@ def get_gspread_client():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, SCOPE)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=5) # Zapamiętuje dane z arkusza na 5 sekund
+@st.cache_data(ttl=10) # Zwiększyłem do 10s dla stabilności
 def fetch_sheet_data():
     client = get_gspread_client()
     sheet = client.open(SHEET_NAME).sheet1
@@ -52,7 +52,6 @@ def get_steam_data(search_type="code"):
                 if part.get_content_type() in ["text/plain", "text/html"]:
                     content += part.get_payload(decode=True).decode(errors='ignore')
         else: content = msg.get_payload(decode=True).decode(errors='ignore')
-
         res_val = None
         if search_type == "link":
             links = re.findall(r'https://store\.steampowered\.com/account/newaccountverification\?[\w=&?]+', content)
@@ -76,6 +75,28 @@ def delete_steam_email(msg_id):
         mail.logout()
     except: pass
 
+# --- FUNKCJE CALLBACK (ZAPOBIEGAJĄ PĘTLOM) ---
+
+def update_tournament_status():
+    """Funkcja odpalana tylko gdy użytkownik faktycznie coś kliknie na liście."""
+    new_val = st.session_state["status_selector"]
+    acc = st.session_state.selected_acc
+    
+    # Znajdź wiersz
+    raw_rows = fetch_sheet_data()
+    r_idx = 0
+    for i, row in enumerate(raw_rows):
+        if row and row[0] == acc['Nazwa konta']:
+            r_idx = i + 1
+            break
+            
+    if r_idx > 0:
+        client = get_gspread_client()
+        sheet = client.open(SHEET_NAME).sheet1
+        sheet.update_cell(r_idx, 7, new_val)
+        st.cache_data.clear() # Czyścimy cache po zmianie
+        st.toast(f"Zmieniono status dla {acc['Nazwa konta']}!")
+
 # --- INTERFEJS ---
 st.set_page_config(page_title="CS Manager PRO", layout="wide")
 
@@ -95,7 +116,6 @@ if st.session_state.logged_in_as is None:
             else: st.error("Błędne hasło!")
     st.stop()
 
-# Pobieranie danych
 raw_rows = fetch_sheet_data()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
@@ -122,7 +142,7 @@ def add_acc_dialog():
                 if i > 0 and (not val or val.strip() == ""): target_row = i + 1; break
             sheet.update(range_name=f"A{target_row}:B{target_row}", values=[[nl, nh]])
             sheet.update(range_name=f"G{target_row}:H{target_row}", values=[["nie odblokowany", nk]])
-            st.cache_data.clear() # Czyścimy cache, żeby od razu widzieć nowe dane
+            st.cache_data.clear()
             st.session_state.show_add_wizard = False; st.rerun()
 
 @st.dialog("Zarządzanie kontem")
@@ -159,13 +179,15 @@ def manage_dialog(acc):
         if c3.button("Perm"): sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         
         st.divider()
+        # --- KLUCZOWA ZMIANA: on_change ZAMIAST LOGIKI IF ---
         curr_st = acc.get('odblokowanie status', 'nie odblokowany')
-        new_st = st.selectbox("Status turniejowy", ["nie odblokowany", "odblokowany"], index=0 if curr_st == "nie odblokowany" else 1, key=f"s_{acc['Nazwa konta']}")
-        if new_st != curr_st:
-            with st.spinner("Aktualizacja..."):
-                sheet.update_cell(r_idx, 7, new_st)
-                st.cache_data.clear() # Czyścimy cache, żeby dane się odświeżyły
-                st.rerun()
+        st.selectbox(
+            "Status turniejowy", 
+            ["nie odblokowany", "odblokowany"], 
+            index=0 if curr_st == "nie odblokowany" else 1, 
+            key="status_selector", 
+            on_change=update_tournament_status # Odpali się TYLKO przy kliknięciu
+        )
 
     if st.session_state.logged_in_as == "admin" and len(tabs) > 1:
         with tabs[1]:
