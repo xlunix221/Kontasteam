@@ -139,21 +139,21 @@ def manage_dialog(acc):
         step = st.session_state.wizard_step
         if step == 1:
             st.write("Krok 1: Login"); st.code(acc['Nazwa konta'])
-            if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 2; st.rerun()
+            if st.button("Dalej ➡️", width='stretch'): st.session_state.wizard_step = 2; st.rerun()
         elif step == 2:
             st.write("Krok 2: Hasło"); st.code(acc['Hasło'])
-            if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 3; st.rerun()
+            if st.button("Dalej ➡️", width='stretch'): st.session_state.wizard_step = 3; st.rerun()
         elif step == 3:
-            if st.button("Pobierz kod 📩", use_container_width=True):
+            if st.button("Pobierz kod 📩", width='stretch'):
                 with st.spinner("Szukam..."): 
                     code, mid = get_steam_data("code")
                     st.session_state.temp_code = code
                     st.session_state.last_mid = mid
             if "temp_code" in st.session_state: st.code(st.session_state.temp_code)
-            if st.button("Gotowe (Wróć do listy) ✅", use_container_width=True):
+            if st.button("Gotowe (Wróć do listy) ✅", width='stretch'):
                 if "last_mid" in st.session_state: delete_steam_email(st.session_state.last_mid)
                 st.session_state.wizard_step = 0
-                st.session_state.selected_acc = None # Wraca do listy
+                st.session_state.selected_acc = None
                 st.session_state.pop("temp_code", None)
                 st.rerun()
         return
@@ -176,14 +176,14 @@ def manage_dialog(acc):
         st.write("Status turniejowy:")
         curr_s = acc.get('odblokowanie status', 'nie odblokowany')
         cs1, cs2 = st.columns(2)
-        if cs1.button("Ustaw: ODBLOKOWANY", use_container_width=True, disabled=(curr_s == "odblokowany")):
+        if cs1.button("Ustaw: ODBLOKOWANY", width='stretch', disabled=(curr_s == "odblokowany")):
             sheet.update_cell(r_idx, 7, "odblokowany"); st.cache_data.clear(); st.rerun()
-        if cs2.button("Ustaw: NIE ODBLOKOWANY", use_container_width=True, disabled=(curr_s == "nie odblokowany")):
+        if cs2.button("Ustaw: NIE ODBLOKOWANY", width='stretch', disabled=(curr_s == "nie odblokowany")):
             sheet.update_cell(r_idx, 7, "nie odblokowany"); st.cache_data.clear(); st.rerun()
 
     if st.session_state.logged_in_as == "admin" and len(tabs) > 1:
         with tabs[1]:
-            if st.button("WYCZYŚĆ BANA 🟢", use_container_width=True):
+            if st.button("WYCZYŚĆ BANA 🟢", width='stretch'):
                 sheet.update_cell(r_idx, 3, ""); sheet.update_cell(r_idx, 4, ""); st.cache_data.clear(); st.rerun()
             st.divider()
             nl, np, nk = st.text_input("Login", acc['Nazwa konta']), st.text_input("Hasło", acc['Hasło']), st.text_input("Kod Znajomego", acc.get('Kod znajomego', ''))
@@ -194,14 +194,14 @@ def manage_dialog(acc):
                 sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[["", ""]]); sheet.update_cell(r_idx, 8, ""); st.cache_data.clear(); st.session_state.selected_acc = None; st.rerun()
 
     st.divider()
-    if st.button("🚀 ZALOGUJ SIĘ", use_container_width=True):
+    if st.button("🚀 ZALOGUJ SIĘ", width='stretch'):
         st.session_state.wizard_step = 1; st.rerun()
 
 # --- PANEL GŁÓWNY ---
 if st.session_state.logged_in_as == "admin":
     with st.expander("🛠️ NARZĘDZIA ADMINISTRATORA"):
         if st.button("➕ Dodaj nowe konto"): st.session_state.show_add_wizard = True; st.rerun()
-        st.dataframe(pd.DataFrame(df_data, columns=headers), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(df_data, columns=headers), width='stretch', hide_index=True)
 
 st.divider()
 st.title("🛡️ Twoje Konta")
@@ -219,7 +219,7 @@ for idx, acc in enumerate(filtered):
             else: st.error(f"⏳ {tl}")
             st.write(f"Turek: **{acc.get('odblokowanie status', 'nie odblokowany')}**")
             if not acc.get('Kod znajomego', '').strip() or acc.get('Kod znajomego') == "Brak": st.warning("⚠️ Brak kodu")
-            if st.button("Zarządzaj", key=f"btn_{idx}", use_container_width=True):
+            if st.button("Zarządzaj", key=f"btn_{idx}", width='stretch'):
                 st.session_state.selected_acc = acc; st.session_state.wizard_step = 0; st.rerun()
 
 if st.session_state.get("show_add_wizard"): add_acc_dialog()
