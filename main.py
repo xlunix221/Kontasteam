@@ -16,7 +16,7 @@ EMAIL_USER = "jestesmygejami211569809@op.pl"
 EMAIL_PASS = "QHHZ-4BGJ-UEDR-UZOV"
 IMAP_SERVER = "imap.poczta.onet.pl"
 
-# --- LOGIKA BACKENDU ---
+# --- LOGIKA BACKENDU (Z OPTYMALIZACJĄ) ---
 
 @st.cache_resource
 def get_gspread_client():
@@ -28,7 +28,7 @@ def get_gspread_client():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, SCOPE)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=10) # Zwiększyłem do 10s dla stabilności
+@st.cache_data(ttl=10)
 def fetch_sheet_data():
     client = get_gspread_client()
     sheet = client.open(SHEET_NAME).sheet1
@@ -75,28 +75,6 @@ def delete_steam_email(msg_id):
         mail.logout()
     except: pass
 
-# --- FUNKCJE CALLBACK (ZAPOBIEGAJĄ PĘTLOM) ---
-
-def update_tournament_status():
-    """Funkcja odpalana tylko gdy użytkownik faktycznie coś kliknie na liście."""
-    new_val = st.session_state["status_selector"]
-    acc = st.session_state.selected_acc
-    
-    # Znajdź wiersz
-    raw_rows = fetch_sheet_data()
-    r_idx = 0
-    for i, row in enumerate(raw_rows):
-        if row and row[0] == acc['Nazwa konta']:
-            r_idx = i + 1
-            break
-            
-    if r_idx > 0:
-        client = get_gspread_client()
-        sheet = client.open(SHEET_NAME).sheet1
-        sheet.update_cell(r_idx, 7, new_val)
-        st.cache_data.clear() # Czyścimy cache po zmianie
-        st.toast(f"Zmieniono status dla {acc['Nazwa konta']}!")
-
 # --- INTERFEJS ---
 st.set_page_config(page_title="CS Manager PRO", layout="wide")
 
@@ -116,6 +94,7 @@ if st.session_state.logged_in_as is None:
             else: st.error("Błędne hasło!")
     st.stop()
 
+# Dane
 raw_rows = fetch_sheet_data()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
@@ -148,46 +127,52 @@ def add_acc_dialog():
 @st.dialog("Zarządzanie kontem")
 def manage_dialog(acc):
     st.subheader(f"Zarządzasz: {acc['Nazwa konta']}")
+    
     r_idx = 0
     for i, row in enumerate(raw_rows):
         if row and row[0] == acc['Nazwa konta']: r_idx = i + 1; break
 
+    # WIZARD LOGOWANIA (Pokazuje się tylko gdy klikniesz Zaloguj)
     if st.session_state.wizard_step > 0:
         step = st.session_state.wizard_step
         if step == 1:
-            st.write("Login:"); st.code(acc['Nazwa konta'])
+            st.write("Krok 1: Login"); st.code(acc['Nazwa konta'])
             if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 2; st.rerun()
         elif step == 2:
-            st.write("Hasło:"); st.code(acc['Hasło'])
+            st.write("Krok 2: Hasło"); st.code(acc['Hasło'])
             if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 3; st.rerun()
         elif step == 3:
             if st.button("Pobierz kod 📩", use_container_width=True):
                 with st.spinner("Szukam..."): code, mid = get_steam_data("code"); st.session_state.temp_code = code; st.session_state.last_mid = mid
             if "temp_code" in st.session_state: st.code(st.session_state.temp_code)
-            if st.button("Gotowe ✅", use_container_width=True):
+            if st.button("Gotowe (Usuwa maila) ✅", use_container_width=True):
                 if "last_mid" in st.session_state: delete_steam_email(st.session_state.last_mid)
                 st.session_state.wizard_step = 0; st.session_state.pop("temp_code", None); st.rerun()
         return
 
-    tabs = st.tabs(["📊 Status", "⚙️ Admin"] if st.session_state.logged_in_as == "admin" else ["📊 Status"])
+    # ZAKŁADKI: STATUS / ADMIN
+    t_names = ["📊 Status"]
+    if st.session_state.logged_in_as == "admin": t_names.append("⚙️ Admin")
+    tabs = st.tabs(t_names)
+    
     with tabs[0]:
-        st.write(f"Kod: `{acc.get('Kod znajomego', 'Brak')}`")
+        st.write(f"Kod znajomego: `{acc.get('Kod znajomego', 'Brak')}`")
         now_pl = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
+        st.write("Ustaw bana:")
         c1, c2, c3 = st.columns(3)
         if c1.button("20h"): sheet.update_cell(r_idx, 3, "20h"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         if c2.button("7 dni"): sheet.update_cell(r_idx, 3, "7 dni"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         if c3.button("Perm"): sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         
         st.divider()
-        # --- KLUCZOWA ZMIANA: on_change ZAMIAST LOGIKI IF ---
-        curr_st = acc.get('odblokowanie status', 'nie odblokowany')
-        st.selectbox(
-            "Status turniejowy", 
-            ["nie odblokowany", "odblokowany"], 
-            index=0 if curr_st == "nie odblokowany" else 1, 
-            key="status_selector", 
-            on_change=update_tournament_status # Odpali się TYLKO przy kliknięciu
-        )
+        st.write("Status turniejowy:")
+        curr_s = acc.get('odblokowanie status', 'nie odblokowany')
+        cs1, cs2 = st.columns(2)
+        # Zamieniliśmy Selectbox na przyciski - ZERO PĘTLI!
+        if cs1.button("Ustaw: ODBLOKOWANY", use_container_width=True, disabled=(curr_s == "odblokowany")):
+            sheet.update_cell(r_idx, 7, "odblokowany"); st.cache_data.clear(); st.rerun()
+        if cs2.button("Ustaw: NIE ODBLOKOWANY", use_container_width=True, disabled=(curr_s == "nie odblokowany")):
+            sheet.update_cell(r_idx, 7, "nie odblokowany"); st.cache_data.clear(); st.rerun()
 
     if st.session_state.logged_in_as == "admin" and len(tabs) > 1:
         with tabs[1]:
@@ -195,13 +180,18 @@ def manage_dialog(acc):
                 sheet.update_cell(r_idx, 3, ""); sheet.update_cell(r_idx, 4, ""); st.cache_data.clear(); st.rerun()
             st.divider()
             nl, np, nk = st.text_input("Login", acc['Nazwa konta']), st.text_input("Hasło", acc['Hasło']), st.text_input("Kod Znajomego", acc.get('Kod znajomego', ''))
-            if st.button("Zapisz zmiany 💾"):
+            cc1, cc2 = st.columns(2)
+            if cc1.button("Zapisz zmiany 💾"):
                 sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[[nl, np]]); sheet.update_cell(r_idx, 8, nk); st.cache_data.clear(); st.rerun()
-            if st.button("USUŃ KONTO 🗑️", type="primary"):
+            if cc2.button("USUŃ KONTO 🗑️", type="primary"):
                 sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[["", ""]]); sheet.update_cell(r_idx, 8, ""); st.cache_data.clear(); st.session_state.selected_acc = None; st.rerun()
 
     st.divider()
-    if st.button("🚀 ZALOGUJ SIĘ", use_container_width=True): st.session_state.wizard_step = 1; st.rerun()
+    c_bot1, c_bot2 = st.columns(2)
+    if c_bot1.button("🚀 ZALOGUJ SIĘ", use_container_width=True):
+        st.session_state.wizard_step = 1; st.rerun()
+    if c_bot2.button("ZAMKNIJ I WRÓĆ ⬅️", use_container_width=True):
+        st.session_state.selected_acc = None; st.session_state.wizard_step = 0; st.rerun()
 
 # --- PANEL GŁÓWNY ---
 if st.session_state.logged_in_as == "admin":
