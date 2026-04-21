@@ -18,8 +18,19 @@ IMAP_SERVER = "imap.poczta.onet.pl"
 # --- LOGIKA BACKENDU ---
 
 def connect_gsheet():
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", SCOPE)
+    # 1. Pobieramy dane z Secrets i zamieniamy na zwykły słownik
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    
+    # 2. NAPRAWA KLUCZA: To najważniejszy krok!
+    # Jeśli w kluczu są tekstowe "\n", zamieniamy je na prawdziwe entery
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    
+    # 3. Autoryzacja
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
     client = gspread.authorize(creds)
+    
+    # 4. Otwarcie arkusza
     return client.open(SHEET_NAME).sheet1
 
 def get_steam_code():
