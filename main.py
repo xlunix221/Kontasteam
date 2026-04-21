@@ -73,7 +73,7 @@ def get_steam_code():
 st.set_page_config(page_title="CS Manager", layout="wide")
 # Dodaj to na samym początku interfejsu (pod st.set_page_config)
 password = st.text_input("Podaj hasło do panelu", type="password")
-if password != "Mam3latka":
+if password != "12345":
     st.warning("Błędne hasło!")
     st.stop()
 
