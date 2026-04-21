@@ -18,15 +18,30 @@ IMAP_SERVER = "imap.poczta.onet.pl"
 # --- LOGIKA BACKENDU ---
 
 def connect_gsheet():
-    # Pobieramy sekrety
-    creds_info = dict(st.secrets["gcp_service_account"])
+    # Pobieramy sekrety jako słownik
+    s = st.secrets["gcp_service_account"]
     
-    # NAPRAWA KLUCZA: Usuwamy zbędne spacje i naprawiamy znaki nowej linii
-    if "private_key" in creds_info:
-        # Usuwamy ewentualne cudzysłowy i puste znaki na końcach
-        creds_info["private_key"] = creds_info["private_key"].strip()
-        # Zamieniamy tekstowe \n na prawdziwe entery (na wypadek gdyby TOML je zachował)
-        creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+    # Ręcznie budujemy czysty słownik, żeby uniknąć błędów z formatem Streamlita
+    creds_info = {
+        "type": s["type"],
+        "project_id": s["project_id"],
+        "private_key_id": s["private_key_id"],
+        "private_key": s["private_key"],
+        "client_email": s["client_email"],
+        "client_id": s["client_id"],
+        "auth_uri": s["auth_uri"],
+        "token_uri": s["token_uri"],
+        "auth_provider_x509_cert_url": s["auth_provider_x509_cert_url"],
+        "client_x509_cert_url": s["client_x509_cert_url"]
+    }
+    
+    # Czyścimy klucz prywatny z wszelkich śmieci (spacje, złe znaki nowej linii)
+    key = creds_info["private_key"]
+    # Zamień tekstowe \n na prawdziwe entery
+    key = key.replace("\\n", "\n")
+    # Usuń ewentualne cudzysłowy, które mogły się wkleić na początku/końcu
+    key = key.strip().strip('"').strip("'")
+    creds_info["private_key"] = key
     
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, SCOPE)
     client = gspread.authorize(creds)
