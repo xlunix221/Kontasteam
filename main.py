@@ -5,7 +5,7 @@ import imaplib
 import email
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # --- KONFIGURACJA ---
 SHEET_NAME = "naszekonta"
@@ -58,11 +58,15 @@ def get_steam_code():
 
 st.set_page_config(page_title="CS Manager", layout="wide")
 
-# LOGOWANIE Z SECRETS
-# Musisz dodać admin_password w zakładce Secrets na Streamlit!
+# LOGOWANIE
+if "admin_password" not in st.secrets:
+    st.error("BŁĄD: Nie ustawiono hasła 'admin_password' w Secrets!")
+    st.stop()
+
 input_pass = st.text_input("Podaj hasło do panelu", type="password")
 if input_pass != st.secrets["admin_password"]:
-    st.warning("Błędne hasło!")
+    if input_pass != "":
+        st.warning("Błędne hasło!")
     st.stop()
 
 try:
@@ -89,14 +93,13 @@ for idx, acc in enumerate(filtered_data):
         with st.container(border=True):
             st.markdown(f"### {acc['Nazwa konta']}")
             
-            # POBIERANIE STATUSU Z KOLUMNY F (Pozostały czas / Status)
-            # Zakładamy, że kolumna F to 6. kolumna w arkuszu (indeks 5 w liście)
+            # Pobieramy czas z kolumny F
             time_left = acc.get('Pozostały czas / Status', 'Czyste')
             
             if time_left == "Czyste" or time_left == "":
                 st.success("🟢 Czyste")
             else:
-                st.error(f"⏳ Pozostało: {time_left}")
+                st.error(f"⏳ {time_left}")
             
             t_status = acc.get('odblokowanie status', '')
             st.write(f"Turniejowy: **{t_status}**")
@@ -121,8 +124,10 @@ if st.session_state.selected_acc:
             st.write(f"**Kod znajomego:** `{acc.get('Kod znajomego', 'Brak')}`")
             st.divider()
             
-            # Wysyłamy czas w formacie, który Google zrozumie
-            now_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # --- POPRAWKA CZASU ---
+            # Pobieramy czas serwera i dodajemy 2 godziny (Polski czas letni)
+            now_pl = datetime.now() + timedelta(hours=2)
+            now_timestamp = now_pl.strftime("%Y-%m-%d %H:%M:%S")
 
             st.write("Ustaw bana:")
             c1, c2, c3 = st.columns(3)
