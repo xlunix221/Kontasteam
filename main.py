@@ -150,7 +150,7 @@ def manage_dialog(acc):
                     st.session_state.temp_code = code
                     st.session_state.last_mid = mid
             if "temp_code" in st.session_state: st.code(st.session_state.temp_code)
-            if st.button("Gotowe (Wróć do listy) ✅", width='stretch'):
+            if st.button("Gotowe ✅", width='stretch'):
                 if "last_mid" in st.session_state: delete_steam_email(st.session_state.last_mid)
                 st.session_state.wizard_step = 0
                 st.session_state.selected_acc = None
@@ -173,13 +173,17 @@ def manage_dialog(acc):
         if c3.button("Perm"): sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         
         st.divider()
-        st.write("Status turniejowy:")
+        # --- NOWY UKŁAD STATUSU TURNIEJOWEGO ---
         curr_s = acc.get('odblokowanie status', 'nie odblokowany')
-        cs1, cs2 = st.columns(2)
-        if cs1.button("Ustaw: ODBLOKOWANY", width='stretch', disabled=(curr_s == "odblokowany")):
-            sheet.update_cell(r_idx, 7, "odblokowany"); st.cache_data.clear(); st.rerun()
-        if cs2.button("Ustaw: NIE ODBLOKOWANY", width='stretch', disabled=(curr_s == "nie odblokowany")):
-            sheet.update_cell(r_idx, 7, "nie odblokowany"); st.cache_data.clear(); st.rerun()
+        col_st1, col_st2 = st.columns([2, 1])
+        with col_st1:
+            st.write(f"Status turniejowy: **{curr_s.upper()}**")
+        with col_st2:
+            target_s = "odblokowany" if curr_s == "nie odblokowany" else "nie odblokowany"
+            if st.button("Zmień 🔄", width='stretch'):
+                sheet.update_cell(r_idx, 7, target_s)
+                st.cache_data.clear()
+                st.rerun()
 
     if st.session_state.logged_in_as == "admin" and len(tabs) > 1:
         with tabs[1]:
