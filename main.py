@@ -123,11 +123,9 @@ if st.session_state.logged_in_as == "admin":
                                 if not val or val.strip() == "":
                                     target_row = i + 1; break
                             
-                            # POPRAWKA: Aktualizujemy tylko kolumny A, B oraz G, H. 
-                            # Zostawiamy E i F, żeby nie skasować formuł!
-                            sheet.update(f"A{target_row}:B{target_row}", [[nl, nh]])
-                            sheet.update(f"C{target_row}:D{target_row}", [["", ""]]) # Czyścimy bany
-                            sheet.update(f"G{target_row}:H{target_row}", [["nie odblokowany", nk]])
+                            sheet.update(range_name=f"A{target_row}:B{target_row}", values=[[nl, nh]])
+                            sheet.update(range_name=f"C{target_row}:D{target_row}", values=[["", ""]])
+                            sheet.update(range_name=f"G{target_row}:H{target_row}", values=[["nie odblokowany", nk]])
                             
                             st.success(f"Dodano konto w wierszu {target_row}!")
                             time.sleep(1)
@@ -141,9 +139,19 @@ if st.session_state.logged_in_as == "admin":
             st.subheader("📝 Edytuj bazę")
             df = pd.DataFrame(df_data, columns=headers)
             edited_df = st.data_editor(df, num_rows="dynamic")
+            
             if st.button("💾 Zapisz zmiany w tabeli"):
-                sheet.update([headers] + edited_df.values.tolist())
-                st.success("Zapisano!"); time.sleep(1); st.rerun()
+                with st.spinner("Sanityzacja i zapisywanie danych..."):
+                    # FIX: Zamieniamy NaN na puste stringi i wszystko konwertujemy na tekst
+                    # To rozwiązuje błąd InvalidJSONError
+                    cleaned_df = edited_df.fillna("").astype(str)
+                    new_values = [headers] + cleaned_df.values.tolist()
+                    
+                    try:
+                        sheet.update(values=new_values, range_name="A1")
+                        st.success("Zapisano pomyślnie!"); time.sleep(1); st.rerun()
+                    except Exception as err:
+                        st.error(f"Błąd zapisu: {err}")
 
 st.divider()
 
