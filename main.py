@@ -82,7 +82,7 @@ raw_rows = sheet.get_all_values()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
 
-# --- DEFINICJE OKIEN DIALOGOWYCH ---
+# --- DIALOGI ---
 
 @st.dialog("Nowe konto")
 def add_acc_dialog():
@@ -107,6 +107,10 @@ def add_acc_dialog():
 
 @st.dialog("Zarządzanie kontem")
 def manage_dialog(acc):
+    # Wyświetlamy aktualnie obsługiwane konto
+    st.subheader(f"Zarządzasz kontem: {acc['Nazwa konta']}")
+    st.divider()
+
     r_idx = 0
     for i, row in enumerate(raw_rows):
         if row and row[0] == acc['Nazwa konta']: r_idx = i + 1; break
@@ -115,22 +119,24 @@ def manage_dialog(acc):
     if st.session_state.wizard_step > 0:
         step = st.session_state.wizard_step
         if step == 1:
-            st.subheader("Login"); st.code(acc['Nazwa konta'])
+            st.write("Krok 1: Login"); st.code(acc['Nazwa konta'])
             if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 2; st.rerun()
         elif step == 2:
-            st.subheader("Hasło"); st.code(acc['Hasło'])
+            st.write("Krok 2: Hasło"); st.code(acc['Hasło'])
             if st.button("Dalej ➡️", use_container_width=True): st.session_state.wizard_step = 3; st.rerun()
         elif step == 3:
-            st.subheader("Steam Guard")
+            st.write("Krok 3: Steam Guard")
             if st.button("Pobierz kod 📩", use_container_width=True):
                 with st.spinner("Szukam..."): st.session_state.temp_code = get_steam_data("code")
             if "temp_code" in st.session_state: st.code(st.session_state.temp_code if st.session_state.temp_code else "Brak kodu.")
+            
+            # POPRAWKA: Kliknięcie Gotowe nie zamyka dialogu, tylko wraca do opcji konta
             if st.button("Gotowe ✅", use_container_width=True):
                 st.session_state.wizard_step = 0
                 st.session_state.pop("temp_code", None); st.rerun()
         return
 
-    # ZAKŁADKI
+    # ZAKŁADKI (STATUS / ADMIN)
     t_names = ["📊 Status"]
     if st.session_state.logged_in_as == "admin": t_names.append("⚙️ Admin")
     tabs = st.tabs(t_names)
@@ -154,7 +160,6 @@ def manage_dialog(acc):
     if st.session_state.logged_in_as == "admin" and len(tabs) > 1:
         with tabs[1]:
             st.subheader("Opcje Administratora")
-            # WYCZYŚĆ BANA - TYLKO TUTAJ
             if st.button("WYCZYŚĆ BANA 🟢", use_container_width=True):
                 sheet.update_cell(r_idx, 3, ""); sheet.update_cell(r_idx, 4, ""); st.rerun()
             
@@ -198,18 +203,18 @@ for idx, acc in enumerate(filtered):
         with st.container(border=True):
             st.markdown(f"### {acc['Nazwa konta']}")
             
-            # 1. STATUS BANA
+            # STATUS BANA
             tl = acc.get('Pozostały czas / Status', 'Czyste')
             if tl == "Czyste" or not tl: 
                 st.success("🟢 Brak bana")
             else: 
                 st.error(f"⏳ {tl}")
             
-            # 2. STATUS TURNIEJOWY
+            # STATUS TURNIEJOWY
             t_status = acc.get('odblokowanie status', 'nie odblokowany')
             st.write(f"Turek: **{t_status}**")
             
-            # 3. KOD ZNAJOMEGO (OSTRZEŻENIE)
+            # KOD ZNAJOMEGO
             f_code = acc.get('Kod znajomego', '').strip()
             if not f_code or f_code.lower() == "brak" or f_code == "":
                 st.warning("⚠️ Brak kodu znajomego")
