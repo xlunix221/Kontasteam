@@ -94,7 +94,7 @@ if st.session_state.logged_in_as is None:
             else: st.error("Błędne hasło!")
     st.stop()
 
-# Dane
+# Pobieranie danych
 raw_rows = fetch_sheet_data()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
@@ -173,7 +173,7 @@ def manage_dialog(acc):
         if c3.button("Perm"): sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         
         st.divider()
-        # --- NOWY UKŁAD STATUSU TURNIEJOWEGO ---
+        # --- POPRAWIONY STATUS TURNIEJOWY (INSTANT UPDATE) ---
         curr_s = acc.get('odblokowanie status', 'nie odblokowany')
         col_st1, col_st2 = st.columns([2, 1])
         with col_st1:
@@ -181,7 +181,11 @@ def manage_dialog(acc):
         with col_st2:
             target_s = "odblokowany" if curr_s == "nie odblokowany" else "nie odblokowany"
             if st.button("Zmień 🔄", width='stretch'):
+                # 1. Najpierw aktualizujemy lokalny stan sesji (UI zmieni się natychmiast)
+                st.session_state.selected_acc['odblokowanie status'] = target_s
+                # 2. Wysyłamy do Google Sheets
                 sheet.update_cell(r_idx, 7, target_s)
+                # 3. Czyścimy cache i przeładowujemy
                 st.cache_data.clear()
                 st.rerun()
 
