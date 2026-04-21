@@ -20,27 +20,20 @@ IMAP_SERVER = "imap.poczta.onet.pl"
 # --- LOGIKA BACKENDU ---
 
 def connect_gsheet():
-    # 1. Pobieramy dane z Secrets
-    creds_dict = dict(st.secrets["gcp_service_account"])
+    # 1. Pobieramy sekrety i zamieniamy je na zwykły słownik Pythona
+    # To rozwiązuje problem "bit stream", bo biblioteka dostaje czyste dane
+    creds_info = dict(st.secrets["gcp_service_account"])
     
-    # 2. Naprawiamy klucz (usuwamy podwójne backslashe)
-    if "private_key" in creds_dict:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    # 2. Naprawiamy klucz prywatny (zamieniamy tekstowe \n na prawdziwe entery)
+    if "private_key" in creds_info:
+        creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
     
-    # 3. SZTUCZKA: Tworzymy tymczasowy plik, żeby oszukać bibliotekę
-    with open("temp_creds.json", "w") as f:
-        json.dump(creds_dict, f)
+    # 3. Łączymy się używając słownika (DICT), a nie pliku (NAME)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, SCOPE)
+    client = gspread.authorize(creds)
     
-    try:
-        # Używamy tej samej metody co na komputerze, ale na tymczasowym pliku
-        creds = ServiceAccountCredentials.from_json_keyfile_name("temp_creds.json", SCOPE)
-        client = gspread.authorize(creds)
-        sheet = client.open(SHEET_NAME).sheet1
-        return sheet
-    finally:
-        # Usuwamy plik, żeby nie zostawiać śladów
-        if os.path.exists("temp_creds.json"):
-            os.remove("temp_creds.json")
+    # 4. Otwieramy arkusz
+    return client.open(SHEET_NAME).sheet1
     
 def get_steam_code():
     try:
