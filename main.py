@@ -20,19 +20,20 @@ IMAP_SERVER = "imap.poczta.onet.pl"
 # --- LOGIKA BACKENDU ---
 
 def connect_gsheet():
-    # 1. Pobieramy sekrety i zamieniamy je na zwykły słownik Pythona
-    # To rozwiązuje problem "bit stream", bo biblioteka dostaje czyste dane
+    # 1. Pobieramy dane z Secrets
     creds_info = dict(st.secrets["gcp_service_account"])
     
-    # 2. Naprawiamy klucz prywatny (zamieniamy tekstowe \n na prawdziwe entery)
     if "private_key" in creds_info:
-        creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-    
-    # 3. Łączymy się używając słownika (DICT), a nie pliku (NAME)
+        # 2. Usuwamy tekstowe \n jeśli są
+        key = creds_info["private_key"].replace("\\n", "\n")
+        
+        # 3. FIX na "Incorrect padding": Usuwamy spacje z każdej linijki klucza
+        # Często przy kopiowaniu na końcu linii wpada spacja, co psuje szyfrowanie
+        clean_lines = [line.strip() for line in key.split("\n") if line.strip()]
+        creds_info["private_key"] = "\n".join(clean_lines).strip()
+        
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, SCOPE)
     client = gspread.authorize(creds)
-    
-    # 4. Otwieramy arkusz
     return client.open(SHEET_NAME).sheet1
     
 def get_steam_code():
