@@ -207,12 +207,12 @@ def manage_dialog(acc):
 
 # --- PANEL GŁÓWNY ---
 if st.session_state.logged_in_as == "admin":
-    with st.expander("🛠️ NARZĘDZIA ADMINISTRATORA"):
+    with st.expander("🛠️ ADMIN"):
         if st.button("➕ Dodaj nowe konto"): st.session_state.show_add_wizard = True; st.rerun()
         st.dataframe(pd.DataFrame(df_data, columns=headers), width='stretch', hide_index=True)
 
 st.divider()
-st.title("🛡️ Twoje Konta")
+st.title("🛡️ Konta")
 search = st.text_input("Szukaj...", "").lower()
 accounts = [dict(zip(headers, row)) for row in df_data if row and row[0] != ""]
 filtered = [a for a in accounts if search in a.get('Nazwa konta', '').lower()]
