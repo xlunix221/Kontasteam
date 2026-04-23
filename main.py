@@ -78,6 +78,7 @@ def delete_steam_email(msg_id):
 # --- INTERFEJS ---
 st.set_page_config(page_title="CS Manager PRO", layout="wide")
 
+# Inicjalizacja stanów
 if "logged_in_as" not in st.session_state: st.session_state.logged_in_as = None
 if "wizard_step" not in st.session_state: st.session_state.wizard_step = 0
 if "selected_acc" not in st.session_state: st.session_state.selected_acc = None
@@ -123,7 +124,6 @@ def add_acc_dialog():
             sheet.update(range_name=f"G{target_row}:H{target_row}", values=[["nie odblokowany", nk]])
             st.cache_data.clear()
             st.session_state.show_add_wizard = False
-            st.session_state.selected_acc = None
             st.rerun()
 
 @st.dialog("Zarządzanie kontem")
@@ -159,9 +159,7 @@ def manage_dialog(acc):
         return
 
     # ZAKŁADKI: STATUS / ADMIN
-    t_names = ["📊 Status"]
-    if st.session_state.logged_in_as == "admin": t_names.append("⚙️ Admin")
-    tabs = st.tabs(t_names)
+    tabs = st.tabs(["📊 Status", "⚙️ Admin"] if st.session_state.logged_in_as == "admin" else ["📊 Status"])
     
     with tabs[0]:
         st.write(f"Kod znajomego: `{acc.get('Kod znajomego', 'Brak')}`")
@@ -204,52 +202,39 @@ def manage_dialog(acc):
 
 # --- PANEL GŁÓWNY ---
 if st.session_state.logged_in_as == "admin":
-    with st.expander("🛠️ NARZĘDZIA ADMINISTRATORA"):
-        if st.button("➕ Dodaj nowe konto"): st.session_state.show_add_wizard = True; st.rerun()
+    with st.expander("🛠️ ADMIN"):
+        if st.button("➕ Dodaj nowe konto"): 
+            st.session_state.selected_acc = None # Czyścimy wybrane konto przy dodawaniu
+            st.session_state.show_add_wizard = True; st.rerun()
         st.dataframe(pd.DataFrame(df_data, columns=headers), width='stretch', hide_index=True)
 
 st.divider()
-st.title("🛡️ Twoje Konta")
+st.title("🛡️ Konta")
 
-# SEKCOJA SORTOWANIA I SZUKANIA
-c_sr1, c_sr2, c_sr3 = st.columns([2, 1, 1])
-with c_sr1:
+# FILTROWANIE
+c_f1, c_f2, c_f3 = st.columns([2, 1, 1])
+with c_f1:
     search = st.text_input("Szukaj...", "").lower()
-with c_sr2:
+with c_f2:
     st.write("##") # Margines
-    sort_ban = st.checkbox("Bany na górze ⏳")
-with c_sr3:
+    # Dodajemy callback, który czyści 'selected_acc' przy kliknięciu filtra
+    sort_ban = st.checkbox("Bany na górze ⏳", on_change=lambda: st.session_state.update({"selected_acc": None}))
+with c_f3:
     st.write("##") # Margines
-    sort_turek = st.checkbox("Odblokowane na górze 🏆")
+    sort_turek = st.checkbox("Odblokowane na górze 🏆", on_change=lambda: st.session_state.update({"selected_acc": None}))
 
-# Przetwarzanie danych
+# Sortowanie kont
 accounts = [dict(zip(headers, row)) for row in df_data if row and row[0] != ""]
 filtered = [a for a in accounts if search in a.get('Nazwa konta', '').lower()]
 
-# --- LOGIKA SORTOWANIA ---
-def sort_priority(acc):
-    priority_score = 0
-    
-    # 1. Priorytet: Ban (od daty zakończenia)
-    is_banned = acc.get('Pozostały czas / Status') != "Czyste" and acc.get('Pozostały czas / Status') != ""
-    ban_date = acc.get('Data zakończenia', "")
-    
-    # 2. Priorytet: Turek
-    is_unlocked = acc.get('odblokowanie status') == "odblokowany"
-    
-    # Budujemy klucz sortowania (Python sortuje rosnąco, więc używamy 0 dla najwyższych priorytetów)
-    # Jeśli sort_ban aktywne, dajemy 0 dla zbanowanych
-    ban_sort = 0 if (sort_ban and is_banned) else 1
-    # Dla daty: chcemy najnowsze daty zakończenia (najdłuższe bany) na górze
-    # lub najstarsze - zależy od preferencji, tutaj damy zbanowane ogółem na górę.
-    
-    turek_sort = 0 if (sort_turek and is_unlocked) else 1
-    
-    return (ban_sort, turek_sort, acc['Nazwa konta'])
+def sort_logic(acc):
+    b_val = 0 if (sort_ban and acc.get('Pozostały czas / Status') != "Czyste" and acc.get('Pozostały czas / Status') != "") else 1
+    t_val = 0 if (sort_turek and acc.get('odblokowanie status') == "odblokowany") else 1
+    return (b_val, t_val, acc['Nazwa konta'])
 
-filtered.sort(key=sort_priority)
+filtered.sort(key=sort_logic)
 
-# Wyświetlanie kafelków
+# Wyświetlanie
 cols = st.columns(4)
 for idx, acc in enumerate(filtered):
     with cols[idx % 4]:
@@ -260,8 +245,16 @@ for idx, acc in enumerate(filtered):
             else: st.error(f"⏳ {tl}")
             st.write(f"Turek: **{acc.get('odblokowanie status', 'nie odblokowany')}**")
             if not acc.get('Kod znajomego', '').strip() or acc.get('Kod znajomego') == "Brak": st.warning("⚠️ Brak kodu")
+            
+            # Przycisk ZARZĄDZAJ
             if st.button("Zarządzaj", key=f"btn_{idx}", width='stretch'):
-                st.session_state.selected_acc = acc; st.session_state.wizard_step = 0; st.rerun()
+                st.session_state.selected_acc = acc
+                st.session_state.wizard_step = 0
+                st.rerun()
 
-if st.session_state.get("show_add_wizard"): add_acc_dialog()
-elif st.session_state.get("selected_acc"): manage_dialog(st.session_state.selected_acc)
+# --- LOGIKA WYWOŁYWANIA OKIEN ---
+if st.session_state.get("show_add_wizard"):
+    add_acc_dialog()
+elif st.session_state.get("selected_acc"):
+    # Tutaj dzieje się magia: okno odpala się TYLKO jeśli wybrano konto
+    manage_dialog(st.session_state.selected_acc)
