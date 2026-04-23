@@ -94,7 +94,7 @@ if st.session_state.logged_in_as is None:
             else: st.error("Błędne hasło!")
     st.stop()
 
-# Pobieranie danych
+# Dane
 raw_rows = fetch_sheet_data()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
@@ -173,7 +173,7 @@ def manage_dialog(acc):
         if c3.button("Perm"): sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         
         st.divider()
-        # --- POPRAWIONY STATUS TURNIEJOWY (INSTANT UPDATE) ---
+        st.write("Status turniejowy:")
         curr_s = acc.get('odblokowanie status', 'nie odblokowany')
         col_st1, col_st2 = st.columns([2, 1])
         with col_st1:
@@ -181,11 +181,8 @@ def manage_dialog(acc):
         with col_st2:
             target_s = "odblokowany" if curr_s == "nie odblokowany" else "nie odblokowany"
             if st.button("Zmień 🔄", width='stretch'):
-                # 1. Najpierw aktualizujemy lokalny stan sesji (UI zmieni się natychmiast)
                 st.session_state.selected_acc['odblokowanie status'] = target_s
-                # 2. Wysyłamy do Google Sheets
                 sheet.update_cell(r_idx, 7, target_s)
-                # 3. Czyścimy cache i przeładowujemy
                 st.cache_data.clear()
                 st.rerun()
 
@@ -207,16 +204,52 @@ def manage_dialog(acc):
 
 # --- PANEL GŁÓWNY ---
 if st.session_state.logged_in_as == "admin":
-    with st.expander("🛠️ ADMIN"):
+    with st.expander("🛠️ NARZĘDZIA ADMINISTRATORA"):
         if st.button("➕ Dodaj nowe konto"): st.session_state.show_add_wizard = True; st.rerun()
         st.dataframe(pd.DataFrame(df_data, columns=headers), width='stretch', hide_index=True)
 
 st.divider()
-st.title("🛡️ Konta")
-search = st.text_input("Szukaj...", "").lower()
+st.title("🛡️ Twoje Konta")
+
+# SEKCOJA SORTOWANIA I SZUKANIA
+c_sr1, c_sr2, c_sr3 = st.columns([2, 1, 1])
+with c_sr1:
+    search = st.text_input("Szukaj...", "").lower()
+with c_sr2:
+    st.write("##") # Margines
+    sort_ban = st.checkbox("Bany na górze ⏳")
+with c_sr3:
+    st.write("##") # Margines
+    sort_turek = st.checkbox("Odblokowane na górze 🏆")
+
+# Przetwarzanie danych
 accounts = [dict(zip(headers, row)) for row in df_data if row and row[0] != ""]
 filtered = [a for a in accounts if search in a.get('Nazwa konta', '').lower()]
 
+# --- LOGIKA SORTOWANIA ---
+def sort_priority(acc):
+    priority_score = 0
+    
+    # 1. Priorytet: Ban (od daty zakończenia)
+    is_banned = acc.get('Pozostały czas / Status') != "Czyste" and acc.get('Pozostały czas / Status') != ""
+    ban_date = acc.get('Data zakończenia', "")
+    
+    # 2. Priorytet: Turek
+    is_unlocked = acc.get('odblokowanie status') == "odblokowany"
+    
+    # Budujemy klucz sortowania (Python sortuje rosnąco, więc używamy 0 dla najwyższych priorytetów)
+    # Jeśli sort_ban aktywne, dajemy 0 dla zbanowanych
+    ban_sort = 0 if (sort_ban and is_banned) else 1
+    # Dla daty: chcemy najnowsze daty zakończenia (najdłuższe bany) na górze
+    # lub najstarsze - zależy od preferencji, tutaj damy zbanowane ogółem na górę.
+    
+    turek_sort = 0 if (sort_turek and is_unlocked) else 1
+    
+    return (ban_sort, turek_sort, acc['Nazwa konta'])
+
+filtered.sort(key=sort_priority)
+
+# Wyświetlanie kafelków
 cols = st.columns(4)
 for idx, acc in enumerate(filtered):
     with cols[idx % 4]:
