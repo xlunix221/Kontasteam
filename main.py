@@ -41,28 +41,40 @@ def get_steam_data(search_type="code"):
         mail.select("Powiadomienia")
         result, data = mail.search(None, 'ALL') 
         ids = data[0].split()
-        if not ids: return None, None
+        if not ids: return "Nie znaleziono kodu", None
+        
         latest_id = ids[-1]
         result, data = mail.fetch(latest_id, "(RFC822)")
         raw_email = data[0][1]
         msg = email.message_from_bytes(raw_email)
+        
         content = ""
         if msg.is_multipart():
             for part in msg.walk():
                 if part.get_content_type() in ["text/plain", "text/html"]:
-                    content += part.get_payload(decode=True).decode(errors='ignore')
-        else: content = msg.get_payload(decode=True).decode(errors='ignore')
+                    payload = part.get_payload(decode=True).decode(errors='ignore')
+                    content += payload
+        else:
+            content = msg.get_payload(decode=True).decode(errors='ignore')
+        
         res_val = None
         if search_type == "link":
             links = re.findall(r'https://store\.steampowered\.com/account/newaccountverification\?[\w=&?]+', content)
-            res_val = links[0] if links else None
+            res_val = links[0] if links else "Nie znaleziono linku"
         else:
-            code = re.search(r'\b[A-Z0-9]{5}\b', content)
-            if not code: code = re.search(r'\b\d{6}\b', content)
-            res_val = code.group(0) if code else None
+            # Szukamy kodu Guard (5 znaków, litery i cyfry)
+            code_match = re.search(r'\b[A-Z0-9]{5}\b', content)
+            if not code_match:
+                # Szukamy ewentualnego kodu 6-cyfrowego
+                code_match = re.search(r'\b\d{6}\b', content)
+            
+            res_val = code_match.group(0) if code_match else "Nie znaleziono kodu"
+
         mail.logout()
+        # Jeśli wynik to XHTML lub śmieci, regex go pominie i zwróci "Nie znaleziono kodu"
         return res_val, latest_id
-    except: return None, None
+    except:
+        return "Nie znaleziono kodu", None
 
 def delete_steam_email(msg_id):
     if not msg_id: return
@@ -78,12 +90,11 @@ def delete_steam_email(msg_id):
 # --- INTERFEJS ---
 st.set_page_config(page_title="CS Manager PRO", layout="wide")
 
-# Inicjalizacja stanów
 if "logged_in_as" not in st.session_state: st.session_state.logged_in_as = None
 if "wizard_step" not in st.session_state: st.session_state.wizard_step = 0
 if "selected_acc" not in st.session_state: st.session_state.selected_acc = None
 
-# LOGOWANIE
+# LOGOWANIE DO PANELU
 if st.session_state.logged_in_as is None:
     c1, c2, c3 = st.columns([1,2,1])
     with c2:
@@ -95,7 +106,6 @@ if st.session_state.logged_in_as is None:
             else: st.error("Błędne hasło!")
     st.stop()
 
-# Dane
 raw_rows = fetch_sheet_data()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
@@ -109,8 +119,8 @@ def add_acc_dialog():
     st.info(f"Email: {EMAIL_USER}")
     if st.button("Pobierz link 🔗"):
         link, mid = get_steam_data("link")
-        if link: st.link_button("ZWERYFIKUJ", link); st.session_state.last_mid = mid
-        else: st.error("Brak linku.")
+        if "http" in str(link): st.link_button("ZWERYFIKUJ", link); st.session_state.last_mid = mid
+        else: st.error(link)
     st.divider()
     nl, nh, nk = st.text_input("Login"), st.text_input("Hasło"), st.text_input("Kod znajomego")
     if st.button("Zapisz ✅"):
@@ -134,22 +144,33 @@ def manage_dialog(acc):
     for i, row in enumerate(raw_rows):
         if row and row[0] == acc['Nazwa konta']: r_idx = i + 1; break
 
-    # WIZARD LOGOWANIA
+    # --- WIZARD LOGOWANIA (2 KROKI) ---
     if st.session_state.wizard_step > 0:
-        step = st.session_state.wizard_step
-        if step == 1:
-            st.write("Krok 1: Login"); st.code(acc['Nazwa konta'])
-            if st.button("Dalej ➡️", width='stretch'): st.session_state.wizard_step = 2; st.rerun()
-        elif step == 2:
-            st.write("Krok 2: Hasło"); st.code(acc['Hasło'])
-            if st.button("Dalej ➡️", width='stretch'): st.session_state.wizard_step = 3; st.rerun()
-        elif step == 3:
-            if st.button("Pobierz kod 📩", width='stretch'):
-                with st.spinner("Szukam..."): 
+        if st.session_state.wizard_step == 1:
+            st.write("### Krok 1: Login i Hasło")
+            # Łączymy login i hasło znakiem Tabulatora (\t)
+            combined_data = f"{acc['Nazwa konta']}\t{acc['Hasło']}"
+            st.code(combined_data, language=None)
+            st.caption("Skopiuj powyższe i wklej w pole 'Nazwa konta' na Steam. Hasło powinno wskoczyć samo.")
+            if st.button("Dalej (Pobierz kod Guard) ➡️", width='stretch'):
+                st.session_state.wizard_step = 2
+                st.rerun()
+        
+        elif st.session_state.wizard_step == 2:
+            st.write("### Krok 2: Steam Guard")
+            if st.button("Pobierz kod teraz 📩", width='stretch'):
+                with st.spinner("Szukam kodu..."): 
                     code, mid = get_steam_data("code")
                     st.session_state.temp_code = code
                     st.session_state.last_mid = mid
-            if "temp_code" in st.session_state: st.code(st.session_state.temp_code)
+            
+            if "temp_code" in st.session_state:
+                if st.session_state.temp_code == "Nie znaleziono kodu":
+                    st.warning("⚠️ Nie znaleziono kodu w ostatnich mailach.")
+                else:
+                    st.success("Kod znaleziony!")
+                    st.code(st.session_state.temp_code, language=None)
+            
             if st.button("Gotowe ✅", width='stretch'):
                 if "last_mid" in st.session_state: delete_steam_email(st.session_state.last_mid)
                 st.session_state.wizard_step = 0
@@ -171,18 +192,15 @@ def manage_dialog(acc):
         if c3.button("Perm"): sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         
         st.divider()
-        st.write("Status turniejowy:")
         curr_s = acc.get('odblokowanie status', 'nie odblokowany')
         col_st1, col_st2 = st.columns([2, 1])
-        with col_st1:
-            st.write(f"Status turniejowy: **{curr_s.upper()}**")
+        with col_st1: st.write(f"Turek: **{curr_s.upper()}**")
         with col_st2:
             target_s = "odblokowany" if curr_s == "nie odblokowany" else "nie odblokowany"
             if st.button("Zmień 🔄", width='stretch'):
                 st.session_state.selected_acc['odblokowanie status'] = target_s
                 sheet.update_cell(r_idx, 7, target_s)
-                st.cache_data.clear()
-                st.rerun()
+                st.cache_data.clear(); st.rerun()
 
     if st.session_state.logged_in_as == "admin" and len(tabs) > 1:
         with tabs[1]:
@@ -190,10 +208,9 @@ def manage_dialog(acc):
                 sheet.update_cell(r_idx, 3, ""); sheet.update_cell(r_idx, 4, ""); st.cache_data.clear(); st.rerun()
             st.divider()
             nl, np, nk = st.text_input("Login", acc['Nazwa konta']), st.text_input("Hasło", acc['Hasło']), st.text_input("Kod Znajomego", acc.get('Kod znajomego', ''))
-            cc1, cc2 = st.columns(2)
-            if cc1.button("Zapisz zmiany 💾"):
+            if st.button("Zapisz zmiany 💾"):
                 sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[[nl, np]]); sheet.update_cell(r_idx, 8, nk); st.cache_data.clear(); st.rerun()
-            if cc2.button("USUŃ KONTO 🗑️", type="primary"):
+            if st.button("USUŃ KONTO 🗑️", type="primary"):
                 sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[["", ""]]); sheet.update_cell(r_idx, 8, ""); st.cache_data.clear(); st.session_state.selected_acc = None; st.rerun()
 
     st.divider()
@@ -204,7 +221,7 @@ def manage_dialog(acc):
 if st.session_state.logged_in_as == "admin":
     with st.expander("🛠️ ADMIN"):
         if st.button("➕ Dodaj nowe konto"): 
-            st.session_state.selected_acc = None # Czyścimy wybrane konto przy dodawaniu
+            st.session_state.selected_acc = None
             st.session_state.show_add_wizard = True; st.rerun()
         st.dataframe(pd.DataFrame(df_data, columns=headers), width='stretch', hide_index=True)
 
@@ -212,18 +229,15 @@ st.divider()
 st.title("🛡️ Konta")
 
 # FILTROWANIE
-c_f1, c_f2, c_f3 = st.columns([2, 1, 1])
-with c_f1:
-    search = st.text_input("Szukaj...", "").lower()
-with c_f2:
-    st.write("##") # Margines
-    # Dodajemy callback, który czyści 'selected_acc' przy kliknięciu filtra
+cf1, cf2, cf3 = st.columns([2, 1, 1])
+with cf1: search = st.text_input("Szukaj...", "").lower()
+with cf2: 
+    st.write("##")
     sort_ban = st.checkbox("Bany na górze ⏳", on_change=lambda: st.session_state.update({"selected_acc": None}))
-with c_f3:
-    st.write("##") # Margines
+with cf3: 
+    st.write("##")
     sort_turek = st.checkbox("Odblokowane na górze 🏆", on_change=lambda: st.session_state.update({"selected_acc": None}))
 
-# Sortowanie kont
 accounts = [dict(zip(headers, row)) for row in df_data if row and row[0] != ""]
 filtered = [a for a in accounts if search in a.get('Nazwa konta', '').lower()]
 
@@ -234,7 +248,6 @@ def sort_logic(acc):
 
 filtered.sort(key=sort_logic)
 
-# Wyświetlanie
 cols = st.columns(4)
 for idx, acc in enumerate(filtered):
     with cols[idx % 4]:
@@ -245,16 +258,10 @@ for idx, acc in enumerate(filtered):
             else: st.error(f"⏳ {tl}")
             st.write(f"Turek: **{acc.get('odblokowanie status', 'nie odblokowany')}**")
             if not acc.get('Kod znajomego', '').strip() or acc.get('Kod znajomego') == "Brak": st.warning("⚠️ Brak kodu")
-            
-            # Przycisk ZARZĄDZAJ
             if st.button("Zarządzaj", key=f"btn_{idx}", width='stretch'):
                 st.session_state.selected_acc = acc
                 st.session_state.wizard_step = 0
                 st.rerun()
 
-# --- LOGIKA WYWOŁYWANIA OKIEN ---
-if st.session_state.get("show_add_wizard"):
-    add_acc_dialog()
-elif st.session_state.get("selected_acc"):
-    # Tutaj dzieje się magia: okno odpala się TYLKO jeśli wybrano konto
-    manage_dialog(st.session_state.selected_acc)
+if st.session_state.get("show_add_wizard"): add_acc_dialog()
+elif st.session_state.get("selected_acc"): manage_dialog(st.session_state.selected_acc)
