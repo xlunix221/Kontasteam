@@ -62,16 +62,18 @@ def get_steam_data(search_type="code"):
             links = re.findall(r'https://store\.steampowered\.com/account/newaccountverification\?[\w=&?]+', content)
             res_val = links[0] if links else "Nie znaleziono linku"
         else:
-            # Szukamy kodu Guard (5 znaków, litery i cyfry)
+            # Regex szukający kodu 5-znakowego (Steam Guard)
             code_match = re.search(r'\b[A-Z0-9]{5}\b', content)
             if not code_match:
-                # Szukamy ewentualnego kodu 6-cyfrowego
                 code_match = re.search(r'\b\d{6}\b', content)
             
             res_val = code_match.group(0) if code_match else "Nie znaleziono kodu"
+            
+            # Dodatkowe zabezpieczenie: jeśli wyciągnięty tekst zawiera tagi HTML (XHTML)
+            if res_val and ("<" in res_val or ">" in res_val):
+                res_val = "Nie znaleziono kodu"
 
         mail.logout()
-        # Jeśli wynik to XHTML lub śmieci, regex go pominie i zwróci "Nie znaleziono kodu"
         return res_val, latest_id
     except:
         return "Nie znaleziono kodu", None
@@ -94,7 +96,7 @@ if "logged_in_as" not in st.session_state: st.session_state.logged_in_as = None
 if "wizard_step" not in st.session_state: st.session_state.wizard_step = 0
 if "selected_acc" not in st.session_state: st.session_state.selected_acc = None
 
-# LOGOWANIE DO PANELU
+# LOGOWANIE
 if st.session_state.logged_in_as is None:
     c1, c2, c3 = st.columns([1,2,1])
     with c2:
@@ -106,6 +108,7 @@ if st.session_state.logged_in_as is None:
             else: st.error("Błędne hasło!")
     st.stop()
 
+# Dane
 raw_rows = fetch_sheet_data()
 headers = raw_rows[0]
 df_data = raw_rows[1:]
@@ -134,24 +137,26 @@ def add_acc_dialog():
             sheet.update(range_name=f"G{target_row}:H{target_row}", values=[["nie odblokowany", nk]])
             st.cache_data.clear()
             st.session_state.show_add_wizard = False
+            st.session_state.selected_acc = None
             st.rerun()
 
 @st.dialog("Zarządzanie kontem")
 def manage_dialog(acc):
-    st.subheader(f"Zarządzasz: {acc['Nazwa konta']}")
+    st.subheader(f"Konto: {acc['Nazwa konta']}")
     
     r_idx = 0
     for i, row in enumerate(raw_rows):
         if row and row[0] == acc['Nazwa konta']: r_idx = i + 1; break
 
-    # --- WIZARD LOGOWANIA (2 KROKI) ---
+    # --- WIZARD LOGOWANIA ---
     if st.session_state.wizard_step > 0:
         if st.session_state.wizard_step == 1:
-            st.write("### Krok 1: Login i Hasło")
-            # Łączymy login i hasło znakiem Tabulatora (\t)
-            combined_data = f"{acc['Nazwa konta']}\t{acc['Hasło']}"
-            st.code(combined_data, language=None)
-            st.caption("Skopiuj powyższe i wklej w pole 'Nazwa konta' na Steam. Hasło powinno wskoczyć samo.")
+            st.write("### Krok 1: Dane logowania")
+            st.write("Login:")
+            st.code(acc['Nazwa konta'], language=None)
+            st.write("Hasło:")
+            st.code(acc['Hasło'], language=None)
+            
             if st.button("Dalej (Pobierz kod Guard) ➡️", width='stretch'):
                 st.session_state.wizard_step = 2
                 st.rerun()
@@ -159,14 +164,14 @@ def manage_dialog(acc):
         elif st.session_state.wizard_step == 2:
             st.write("### Krok 2: Steam Guard")
             if st.button("Pobierz kod teraz 📩", width='stretch'):
-                with st.spinner("Szukam kodu..."): 
+                with st.spinner("Szukam..."): 
                     code, mid = get_steam_data("code")
                     st.session_state.temp_code = code
                     st.session_state.last_mid = mid
             
             if "temp_code" in st.session_state:
                 if st.session_state.temp_code == "Nie znaleziono kodu":
-                    st.warning("⚠️ Nie znaleziono kodu w ostatnich mailach.")
+                    st.error("Nie znaleziono kodu")
                 else:
                     st.success("Kod znaleziony!")
                     st.code(st.session_state.temp_code, language=None)
@@ -192,6 +197,7 @@ def manage_dialog(acc):
         if c3.button("Perm"): sheet.update_cell(r_idx, 3, "Perm"); sheet.update_cell(r_idx, 4, now_pl); st.cache_data.clear(); st.rerun()
         
         st.divider()
+        st.write("Status turniejowy:")
         curr_s = acc.get('odblokowanie status', 'nie odblokowany')
         col_st1, col_st2 = st.columns([2, 1])
         with col_st1: st.write(f"Turek: **{curr_s.upper()}**")
@@ -208,9 +214,10 @@ def manage_dialog(acc):
                 sheet.update_cell(r_idx, 3, ""); sheet.update_cell(r_idx, 4, ""); st.cache_data.clear(); st.rerun()
             st.divider()
             nl, np, nk = st.text_input("Login", acc['Nazwa konta']), st.text_input("Hasło", acc['Hasło']), st.text_input("Kod Znajomego", acc.get('Kod znajomego', ''))
-            if st.button("Zapisz zmiany 💾"):
+            cc1, cc2 = st.columns(2)
+            if cc1.button("Zapisz zmiany 💾"):
                 sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[[nl, np]]); sheet.update_cell(r_idx, 8, nk); st.cache_data.clear(); st.rerun()
-            if st.button("USUŃ KONTO 🗑️", type="primary"):
+            if cc2.button("USUŃ KONTO 🗑️", type="primary"):
                 sheet.update(range_name=f"A{r_idx}:B{r_idx}", values=[["", ""]]); sheet.update_cell(r_idx, 8, ""); st.cache_data.clear(); st.session_state.selected_acc = None; st.rerun()
 
     st.divider()
